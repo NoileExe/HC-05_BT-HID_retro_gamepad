@@ -1,0 +1,35 @@
+# Arduino IDE
+*.ino.cpp
+*.ino.eep
+*.ino.hex
+*.ino.with_bootloader.bin
+*.ino.standard.hex
+*.lst
+build/
+
+# Иные артефакты сборки
+*.elf
+*.bin
+*.hex
+*.eep
+*.lss
+*.sym
+*.map
+
+# PlatformIO (если вдруг используется)
+.pio/
+.piolibdeps/
+.vscode/
+
+# VS Code
+.vscode/
+
+# Временные файлы
+*~
+*.bak
+*.tmp
+.DS_Store
+Thumbs.db
+
+# Логи
+*.log
