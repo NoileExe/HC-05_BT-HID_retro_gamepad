@@ -16,6 +16,9 @@ build/
 *.sym
 *.map
 
+# Черновики и исходники для документации
+docs/img/
+
 # PlatformIO (если вдруг используется)
 .pio/
 .piolibdeps/
