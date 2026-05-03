@@ -28,13 +28,12 @@
 #include <Arduino.h>
 
 #ifdef __LGT8FX8P__
-	#include <PMU.h>
+	#include <lgt_LowPower.h>
 	#include <WDT.h>
 #else
 	#include <avr/sleep.h>
 	#include <avr/power.h>
 	#include <avr/wdt.h>
-	#include <iarduino_VCC.h>
 #endif
 
 #include "gamepadPowerManager.h"
@@ -68,6 +67,7 @@ void PowerManager::setWakeupCallback(void (*callback)())
 PowerManager::PowerManager(uint8_t wakeUpPin)
 	: currentState(false)
 	, lastConnectedState(0)
+	, measureVoltage(3.300f/3.300f)		// Измеренное мультиметром Vcc разделенное на Vcc, которое сообщил readVoltage()
 	, currentVoltage(5.0)
 	, lastVoltageCheck(0)
 	, powerLed(PWRLED_PIN)
@@ -77,12 +77,6 @@ PowerManager::PowerManager(uint8_t wakeUpPin)
 
 void PowerManager::begin()
 {
-#ifdef __LGT8FX8P__
-	analogReference(INTERNAL1V024);
-#else
-	analogReference(DEFAULT);
-#endif
-
 	pinMode(BT_ONOFF_PIN, OUTPUT);
 	digitalWrite(BT_ONOFF_PIN, HIGH);	//Включаем преобразователь напряжения на модуле BT
 
@@ -145,9 +139,6 @@ void PowerManager::watchdog_enable(bool enabled /*= true*/)
 
 void PowerManager::tick()
 {
-	readConnectionState();
-	readVoltage();
-	
 	checkConnection();
 	checkBattery();
 	
@@ -159,19 +150,20 @@ void PowerManager::tick()
 bool PowerManager::readConnectionState()
 {
 	currentState = analogRead(BT_STAT_PIN) > 500;	//Примерно половина от максимального значения 1023
+													// (при 10 битах analogReadResolution() - значение по умолчанию)
 	return currentState;
 }
 
 void PowerManager::checkConnection()
 {
 	uint32_t now = millis();
+	readConnectionState();
 
 	if (currentState)
 		lastConnectedState = now;
-	else if (INACTIVITY_DISCONNECTED_MS < now - lastConnectedState)
+	else if (INACTIVITY_DISCONNECTED_MS < (now - lastConnectedState))
 	{
 		sleep();
-		wake();
 	}
 }
 
@@ -179,11 +171,7 @@ void PowerManager::checkConnection()
 
 float PowerManager::readVoltage()
 {
-#ifdef __LGT8FX8P__
-	currentVoltage = (analogRead(VCCM) * 1.024 * 5.0) / 1023.00;
-#else
-	currentVoltage = analogRead_VCC();
-#endif
+	currentVoltage = measureVoltage.Read_Volts();
 
 	//Отладка измерения напряжения
 	//Serial.println(currentVoltage, 3);
@@ -195,9 +183,10 @@ float PowerManager::readVoltage()
 void PowerManager::checkBattery()
 {
 	uint32_t now = millis();
-	if (now - lastVoltageCheck >= VOLTAGE_CHECK_MS)
+	if (VOLTAGE_CHECK_MS < (now - lastVoltageCheck))
 	{
 		lastVoltageCheck = now;
+		readVoltage();
 		
 		// Критический разряд: быстро мигаем и уходим в глубокий сон до зарядки
 		// Не даем пользоваться устройством пока батарея не будет заряжена
@@ -211,7 +200,6 @@ void PowerManager::checkBattery()
 			
 			indicateCritical();
 			sleep();
-			wake();
 			
 			// Читаем при пробуждении
 			readVoltage();
@@ -299,10 +287,11 @@ void PowerManager::sleep()
 	DIDR1 = 0xFF;
 
 	EIFR = 0xFF;
-	attachInterrupt(interrupt_pin, isrStub, LOW);
-	PMU.sleep(PM_POFFS1, SLEEP_FOREVER);	// PM_POFFS1 - переводим МК в спящий режим
-											// (DPS2 экономичнее, но его нет в enum pmu_t и при пробуждении он перезагрузит МК,
-											// т.е. при запуске В setup() придется выполнять всё то что происходит в wake()
+	attachInterrupt(digitalPinToInterrupt(interrupt_pin), isrStub, LOW);
+	LowPower.powerDown(SLEEP_FOREVER, ADC_OFF, BOD_OFF);	// Переводим МК в спящий режим
+															// (DPS2 экономичнее, но при пробуждении он перезагрузит МК,а так же он не сохраняет состояние пинов. 
+															// Т.е. в данном исполнении без изменения схемы будет утечка,при которой будет питаться LDO BT-модуля, 
+															// что будет создавать огромное потребление в режиме сна)
 #else
 	ADMUX = 0;
 	ADCSRA &= ~_BV(ADEN);	// Отключаем АЦП
@@ -325,12 +314,16 @@ void PowerManager::sleep()
 	if (interrupt_pin == 2)			EIFR = _BV(INTF0);
 	else if (interrupt_pin == 3)	EIFR = _BV(INTF1);
 
-	attachInterrupt(interrupt_pin, isrStub, LOW);	//Выход из режима сна по нажатию кнопки на 2ом пине (START)
+	//Выход из режима сна по нажатию кнопки на указанном пине (обычно 2ой пин - кнопка START)
+	// Перевод цифрового пина в номер пина с прерыванием (для ATmega D2 == 0, D3 == 1)
+	attachInterrupt(digitalPinToInterrupt(interrupt_pin), isrStub, LOW);
 	sei();											// Разрешаем обработку прерываний
 	
 	sleep_bod_disable();							// Отключаем детектор пониженного напряжения питания
 	sleep_cpu();									// Переводим МК в спящий режим
 #endif
+
+	wake();
 }
 
 void PowerManager::wake()
@@ -346,9 +339,7 @@ void PowerManager::wake()
 	VDTCR |= _BV(WCE);
 	VDTCR |= _BV(VDTEN);	// Включаем детектор
 
-	analogReference(INTERNAL1V024);
-	
-	wdt_enable(WTO_8S);
+	wdt_enable(WTO_8S);		//Слежение за зависанием самого МК. Таймаут установлен максимальный ~8с
 #else
 	// ПРОСНУЛИСЬ
 	sleep_disable();
@@ -362,12 +353,12 @@ void PowerManager::wake()
 	DIDR1 = 0;
 
 	ADCSRA |= _BV(ADEN);
-	analogReference(DEFAULT);
-	
-	wdt_enable(WDTO_8S);
+
+	wdt_enable(WDTO_8S);	//Слежение за зависанием самого МК. Таймаут установлен максимальный ~8с
 #endif
 
-	detachInterrupt(interrupt_pin);
+	// Перевод цифрового пина в номер пина с прерыванием (для ATmega D2 == 0, D3 == 1)
+	detachInterrupt( digitalPinToInterrupt(interrupt_pin) );
 
 	digitalWrite(BT_ONOFF_PIN, HIGH);	//Включаем преобразователь напряжения на модуле BT
 	Serial.begin(9600);
@@ -375,6 +366,7 @@ void PowerManager::wake()
 
 	currentState = false;
 	lastConnectedState = millis();
+	lastVoltageCheck = millis() - VOLTAGE_CHECK_MS;
 
 #if defined(ADC6D) && defined(ADC7D)
 	if (BT_STAT_PIN == A6 || BT_STAT_PIN == A7)

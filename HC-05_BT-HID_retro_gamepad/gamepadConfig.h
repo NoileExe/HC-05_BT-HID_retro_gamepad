@@ -43,57 +43,27 @@
 //------------------------------------------------------------------
 
 // Проверка, что определён хотя бы один из вариантов геймпада
-#if !defined(SEGA_JOY) && !defined(SNES_JOY)
-  #error "Define SEGA_JOY, NES_JOY or SNES_JOY!"
+#if !defined(SEGA_JOY) && !defined(NES_JOY) && !defined(SNES_JOY)
+	#error "Define SEGA_JOY, NES_JOY or SNES_JOY!"
 #endif
 
 //------------------------------------------------------------------
 
 // Комбинации кнопок для системных действий
-static constexpr uint8_t POWEROFF_COMBO_SIZE = 4;
-static constexpr uint8_t CHMODE_COMBO_SIZE = 4;
+static constexpr uint8_t POWEROFF_COMBO_SIZE = 3;
+static constexpr uint8_t CHMODE_COMBO_SIZE = 3;
 
-#if defined(SEGA_JOY)
-	static constexpr RN42_HID_gamepad::Button POWEROFF_COMBO[] = {
-		RN42_HID_gamepad::Button::DOWN,
-		RN42_HID_gamepad::Button::X,
-		RN42_HID_gamepad::Button::B,
-		RN42_HID_gamepad::Button::Z
-	};
+static constexpr RN42_HID_gamepad::Button POWEROFF_COMBO[] = {
+	RN42_HID_gamepad::Button::DOWN,
+	RN42_HID_gamepad::Button::A,
+	RN42_HID_gamepad::Button::B
+};
 
-	static constexpr RN42_HID_gamepad::Button CHMODE_COMBO[] = {
-		RN42_HID_gamepad::Button::UP,
-		RN42_HID_gamepad::Button::A,
-		RN42_HID_gamepad::Button::Y,
-		RN42_HID_gamepad::Button::C
-	};
-#elif defined(NES_JOY)
-	static constexpr RN42_HID_gamepad::Button POWEROFF_COMBO[] = {
-		RN42_HID_gamepad::Button::DOWN,
-		RN42_HID_gamepad::Button::B,
-		RN42_HID_gamepad::Button::A
-	};
-
-	static constexpr RN42_HID_gamepad::Button CHMODE_COMBO[] = {
-		RN42_HID_gamepad::Button::UP,
-		RN42_HID_gamepad::Button::B,
-		RN42_HID_gamepad::Button::A
-	};
-#elif defined(SNES_JOY)
-	static constexpr RN42_HID_gamepad::Button POWEROFF_COMBO[] = {
-		RN42_HID_gamepad::Button::DOWN,
-		RN42_HID_gamepad::Button::Y,
-		RN42_HID_gamepad::Button::B,
-		RN42_HID_gamepad::Button::A
-	};
-
-	static constexpr RN42_HID_gamepad::Button CHMODE_COMBO[] = {
-		RN42_HID_gamepad::Button::UP,
-		RN42_HID_gamepad::Button::Y,
-		RN42_HID_gamepad::Button::X,
-		RN42_HID_gamepad::Button::A
-	};
-#endif
+static constexpr RN42_HID_gamepad::Button CHMODE_COMBO[] = {
+	RN42_HID_gamepad::Button::UP,
+	RN42_HID_gamepad::Button::A,
+	RN42_HID_gamepad::Button::B
+};
 
 //------------------------------------------------------------------
 
@@ -160,7 +130,7 @@ inline uint8_t getButtonPin(RN42_HID_gamepad::Button btn)
 {
 	switch(btn)
 	{
-		case RN42_HID_gamepad::Button::START:	return 2;
+		case RN42_HID_gamepad::Button::START:	return 2;		// ВАЖНО 2 или 3 пин для пробуждения!!!
 		
 #if defined(SEGA_JOY)
 		case RN42_HID_gamepad::Button::A:		return 5;

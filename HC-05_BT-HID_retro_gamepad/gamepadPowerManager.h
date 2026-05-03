@@ -27,12 +27,14 @@
 
 #include <Arduino.h>
 #include <Blinker.h>	// GyverLibs
+#include <Vcc.h>		// Arduino_Vcc by LaZsolt
 
 //------------------------------------------------------------------
 
 class PowerManager
 {
 public:
+	// Получает номер ЦИФРОВОГО пина, на котором возможно настроеить внешнее прерывание для пробуждения
 	PowerManager(uint8_t wakeUpPin);
 	
 	void begin();
@@ -75,10 +77,11 @@ private:
 	bool currentState;				// Последнее считанное состояние сопряжения BT-модуля
 	uint32_t lastConnectedState;	// Время последнего активного состояния сопряжения (для выключения при простое более 2 МИНУТ)
 	
+	Vcc measureVoltage;
 	float currentVoltage;			// Последнее измеренное напряжение батареи (в Вольтах)
 	uint32_t lastVoltageCheck;		// Время последнего измерения (в мс, millis())
 	
-	uint8_t interrupt_pin;
+	uint8_t interrupt_pin;			// Номер digital-пина для прерывания
 
 	// Статический указатель на пользовательскую функцию подготовки ко сну
 	static void (*preSleepCallback)();
