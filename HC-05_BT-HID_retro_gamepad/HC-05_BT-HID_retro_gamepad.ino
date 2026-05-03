@@ -24,7 +24,7 @@
 
 /*
     Все нажатия кнопок на цифровых пинах срабатывают на логический нуль (LOW)
-    Аналоговые пины работают в режиме цифровых
+    Аналоговые пины для кнопок работают в режиме цифровых
     Потребление:
       В режиме поиска соединения до 40 мА
       В рабочем режиме до 35 мА
@@ -40,6 +40,7 @@
       Контроль наличия сопряжения с BT-модулем (если соединение отсутствует более 2 минут - уход в сон)
       Глубокий сон BT-модуля и Arduino по достижению таймера бездействия или по нажатию соотв. комбинации:  "ВНИЗ  + A + B"  в течение 3 сек.
       Смена режима (Стандартный/Тубро/Слоумо) по комбинации (в дополнение световая индикация):              "ВВЕРХ + A + B"  в течение 3 сек.
+      Возможность настроить Turbo-функционал для отдельно взятых кнопок (для fightpad-подобных геймпадов и геймпадов с дублирующими Turbo-кнопками - требует изменения кода)
       Защита от зависаний Arduino / LGT8F328P
       Защита от зависаний BT-модуля путём перевода джойстика в режим сна и пробуждения
 */
@@ -224,8 +225,10 @@ void loop()
 
 void readAllButtons()
 {
-  // Считываем все данные
-  for (uint8_t btn = 0; btn < BUTTONS_VARIANTS; btn++)
+  // ================================================== TURBO ==================================================
+  // ТОЛЬКО для геймпадов с дублирующими турбо-кнопками
+  // Включение/выключение турбо-функционала для отдельных кнопок
+  /*for (uint8_t btn = 0; btn < BUTTONS_VARIANTS; btn++)
   {
     RN42_HID_gamepad::Button currBtn = static_cast<RN42_HID_gamepad::Button>(btn);
     uint8_t pin = getButtonPin(currBtn);
@@ -233,6 +236,59 @@ void readAllButtons()
     if (pin != UINT8_MAX)
     {
       bool isCurrButtonPressed = digitalRead(pin) == LOW;
+
+      // isTurboButton(RN42_HID_gamepad::Button::A/B/C) == true - означает что нажата соотв. Turbo-кнопка X/Y/Z
+      switch (currBtn)
+      {
+        case RN42_HID_gamepad::Button::X:
+          if (isCurrButtonPressed != hid_gamepad.isTurboButton(RN42_HID_gamepad::Button::A))
+            hid_gamepad.setTurboButton(RN42_HID_gamepad::Button::A, isCurrButtonPressed);
+          break;
+        case RN42_HID_gamepad::Button::Y:
+          if (isCurrButtonPressed != hid_gamepad.isTurboButton(RN42_HID_gamepad::Button::B))
+            hid_gamepad.setTurboButton(RN42_HID_gamepad::Button::B, isCurrButtonPressed);
+          break;
+        case RN42_HID_gamepad::Button::Z:
+          if (isCurrButtonPressed != hid_gamepad.isTurboButton(RN42_HID_gamepad::Button::C))
+            hid_gamepad.setTurboButton(RN42_HID_gamepad::Button::C, isCurrButtonPressed);
+          break;
+      }
+    }
+  }*/
+  // ================================================== TURBO ==================================================
+  
+  // Считываем все данные
+  for (uint8_t btn = 0; btn < BUTTONS_VARIANTS; btn++)
+  {
+    RN42_HID_gamepad::Button currBtn = static_cast<RN42_HID_gamepad::Button>(btn);
+
+    // ================================================== TURBO ==================================================
+    // Полностью игнорируем нажатие X/Y/Z. isTurboButton == true для A/B/C уже означает нажатие X/Y/Z
+    /*switch (currBtn)
+    {
+      case RN42_HID_gamepad::Button::X:
+      case RN42_HID_gamepad::Button::Y:
+      case RN42_HID_gamepad::Button::Z:
+        continue;
+    }*/
+    // ================================================== TURBO ==================================================
+
+    uint8_t pin = getButtonPin(currBtn);
+
+    if (pin != UINT8_MAX)
+    {
+      bool isCurrButtonPressed = digitalRead(pin) == LOW;
+
+      // ================================================== TURBO ==================================================
+      /*switch (currBtn)
+      {
+        case RN42_HID_gamepad::Button::A:
+        case RN42_HID_gamepad::Button::B:
+        case RN42_HID_gamepad::Button::C:
+          isCurrButtonPressed |= hid_gamepad.isTurboButton(currBtn);
+      }*/
+      // ================================================== TURBO ==================================================
+
       hid_gamepad.setButtonState(currBtn, isCurrButtonPressed);
     }
   }

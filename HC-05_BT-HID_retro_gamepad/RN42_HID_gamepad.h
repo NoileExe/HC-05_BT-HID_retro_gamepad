@@ -101,15 +101,21 @@ public:
 
 	// Установка состояний осей и кнопок ДО ОТПРАВКИ
 	void setAxisState(int8_t x1, int8_t y1, int8_t x2, int8_t y2);
-	void setButtonState(RN42_HID_gamepad::Button btn, bool isPressed);
+	void setButtonState(Button btn, bool isPressed);
 
 	// Отправка HID-репорта
 	void sendButtons();
 	
 	void sendAllEmptyButtons();
 	
-	bool isNewCombination() { return currBtns != prevBtns; };
-	bool isAnyButtonPressed() { return !currBtns.isEmpty(); };
+	bool isNewCombination() const { return currBtns != prevBtns; };
+	bool isButtonPressed(Button btn) const;
+	bool isAnyButtonPressed() const { return !currBtns.isEmpty(); };
+
+	// Включить/выключить Tubro-функционал для отдельной кнопки ДЕЙСТВИЯ
+	void setTurboButton(Button btn, bool isTurbo);
+	bool isTurboButton(Button btn) const;
+	bool isTurboSetForAnyButton() const { return !turboBtns.isEmpty(); }
 
 	// Смена режима работы геймпада: Standard, Turbo, Slow
 	void changeMode(Mode mode);
@@ -158,11 +164,14 @@ public:
 	bool isConnected();				// Установленно ли соединение, но быстрее по светодиоду на GPIO2
 
 private:
-	// Установка состояний кнопок в комбинации (установка бита кнопки в нужном байте)
-	void setButtonInReport(ButtonsCombination& bc, RN42_HID_gamepad::Button btn, bool pressed);
+	// Установка состояний кнопок в комбинации (установка бита кнопки в нужном байте - ON/OFF)
+	void setButtonInReport(ButtonsCombination& bc, Button btn, bool state);
+	
+	// Включен ли бит кнопки в комбинации
+	bool isButtonInReport(const ButtonsCombination& bc, Button btn) const;
 	
 	// Создание комбинации из указанного массива
-	inline RN42_HID_gamepad::ButtonsCombination createCombo(const Button* combo, uint8_t count) const;
+	inline ButtonsCombination createCombo(const Button* combo, uint8_t count) const;
 	
 	// Чтение ответной команды и возврат её длины и самого ответа out
 	int readLine(char* out, size_t maxLen, unsigned long timeout_ms = 500);
@@ -177,13 +186,15 @@ private:
 private:
 	Stream* uart;
 
-	RN42_HID_gamepad::Mode currMode;
+	Mode currMode;
 	
-	RN42_HID_gamepad::ButtonsCombination currBtns;
-	RN42_HID_gamepad::ButtonsCombination prevBtns;
+	ButtonsCombination currBtns;
+	ButtonsCombination prevBtns;
 	
-	RN42_HID_gamepad::ButtonsCombination powerOffCombo;
-	RN42_HID_gamepad::ButtonsCombination changeModeCombo;
+	ButtonsCombination turboBtns; // Кнопки, на которых всегда включен режим турбо
+	
+	ButtonsCombination powerOffCombo;
+	ButtonsCombination changeModeCombo;
 
 
 	static constexpr size_t MAX_STR_LEN = 32; // RN-42 лимит: имя ≤20, версия ≤18

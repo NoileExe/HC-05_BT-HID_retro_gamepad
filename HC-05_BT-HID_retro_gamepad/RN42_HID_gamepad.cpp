@@ -71,6 +71,7 @@ RN42_HID_gamepad::RN42_HID_gamepad()
 	: currMode(RN42_HID_gamepad::Mode::Standard)
 	, currBtns()
 	, prevBtns()
+	, turboBtns()
 	, powerOffCombo()
 	, changeModeCombo()
 {
@@ -106,53 +107,81 @@ void RN42_HID_gamepad::sendButtons()
 	if (!uart)
 		return;
 
+	// =========================== Маски кнопок, на которые действует Turbo ===========================
+	// В режиме Turbo — все кнопки действий, иначе — только помеченные через setTurboButton()
+	uint8_t turboMask1 = (currMode == Mode::Turbo) ? 0xFF : turboBtns.btn1;
+	uint8_t turboMask2 = (currMode == Mode::Turbo) 
+							? Btn2::L2 | Btn2::R2 | Btn2::THUMBL | Btn2::THUMBR
+							: turboBtns.btn2;
 
-	// Маски кнопок, на которые действует Turbo
-	constexpr uint8_t TURBO_MASK_1 = 0xFF;		// A,B,C,X,Y,Z,L1,R1
-	constexpr uint8_t TURBO_MASK_2 = Btn2::L2 | Btn2::R2 | Btn2::THUMBL | Btn2::THUMBR;
-
+	const bool hasTurboButtons = (turboMask1 || turboMask2);	// Есть ли Turbo-кнопки
+	// =========================== Маски кнопок, на которые действует Turbo ===========================
+	// ================================================================================================
+	// =============================== Состояние кнопок для модификации ===============================
 	uint8_t tmp_btn1 = currBtns.btn1;
 	uint8_t tmp_btn2 = currBtns.btn2;
 	int8_t tmp_x1 = 0, tmp_y1 = 0;
-
-	// Разрешение конфликта D-Pad / Левый стик: в HID-репорте RN-42 нет отдельного байта D-Pad.
+	// =============================== Состояние кнопок для модификации ===============================
+	// ================================================================================================
+	// =========================== Разрешение конфликта D-Pad / Левый стик ============================
+	// В HID-репорте RN-42 нет отдельного байта D-Pad.
 	// Проводим векторное сложение в отдельные переменные, чтобы не портить currBtns для сравнений
 	if (currBtns.dpad & DPad::UP)		tmp_y1 -= 127;
 	if (currBtns.dpad & DPad::RIGHT)	tmp_x1 += 127;
 	if (currBtns.dpad & DPad::DOWN)		tmp_y1 += 127;
 	if (currBtns.dpad & DPad::LEFT)		tmp_x1 -= 127;
-	
+
 	// Суммируем и ограничиваем диапазон, чтобы не было переполнения int8
 	tmp_x1 = constrain((int16_t)currBtns.x1 + tmp_x1, -127, 127);
 	tmp_y1 = constrain((int16_t)currBtns.y1 + tmp_y1, -127, 127);
+	// =========================== Разрешение конфликта D-Pad / Левый стик ============================
+	// ================================================================================================
+	// ================================= Смена состояний Turbo-кнопок =================================
+	static bool prevTurboPhase = false;
+	static uint8_t prevSlowStartState = 0;
 
-
-	bool shouldSend = false;
+	const bool currTurboPhase = (millis() / 33ul) & 1;				// Тайминг пульсации турбокнопок
+	const bool turboPhaseChanged = (currTurboPhase != prevTurboPhase);
 	
-	switch (currMode) {
+	prevTurboPhase = currTurboPhase;
+	
+	// Применяем маску в фазе "отпускания"
+	if (currTurboPhase && hasTurboButtons)
+	{
+		tmp_btn1 &= ~turboMask1;
+		tmp_btn2 &= ~turboMask2;
+	}
+	// ================================= Смена состояний Turbo-кнопок =================================
+	// ================================================================================================
+
+	bool shouldSend = (currBtns != prevBtns);
+	
+	switch (currMode)
+	{
 		case Mode::Standard:
-			shouldSend = (currBtns != prevBtns);
-			break;
-
-		case Mode::Turbo:
-			// Игнорируем prevBtns, шлём каждый кадр
-			// Rapid-fire: половину времени кнопки "отпущены" (~30 Гц пульсация)
-			if ((millis() / 33ul) & 1)
+			if (hasTurboButtons)
 			{
-				tmp_btn1 &= ~TURBO_MASK_1;
-				tmp_btn2 &= ~TURBO_MASK_2;
+				bool turboPressed = (currBtns.btn1 & turboMask1) || (currBtns.btn2 & turboMask2);
+				if (turboPressed && turboPhaseChanged)
+					shouldSend = true;
 			}
-			
-			shouldSend = true;
 			break;
-
+		
+		case Mode::Turbo:
+			// В режиме Turbo: отправка только при смене фазы
+			shouldSend |= turboPhaseChanged;
+			break;
+		
 		case Mode::Slow:
-			// Игнорируем prevBtns, шлём START каждый кадр
-			// Если пользователь сам держит START — не ломаем его намерение
-			if ((millis() / 100ul) & 1)		tmp_btn2 |= Btn2::START;	// эмулируем нажатие
-			else							tmp_btn2 &= ~Btn2::START;	// эмулируем отпускание
+			const bool slowPhase = ((millis() / 100ul) & 1);
+			const uint8_t currStartState = slowPhase ? Btn2::START : 0;
 			
-			shouldSend = true;
+			if (currStartState != prevSlowStartState)
+			{
+				tmp_btn2 = (tmp_btn2 & ~Btn2::START) | currStartState;
+				shouldSend = true;
+				prevSlowStartState = currStartState;
+			}
 			break;
 	}
 
@@ -201,6 +230,39 @@ void RN42_HID_gamepad::changeMode(Mode mode)
 {
 	if (currMode != mode)
 		currMode = mode;
+}
+
+bool RN42_HID_gamepad::isButtonPressed(RN42_HID_gamepad::Button btn) const
+{
+	return isButtonInReport(currBtns, btn);
+}
+
+//------------------------------------------------------------------
+
+void RN42_HID_gamepad::setTurboButton(Button btn, bool isTurbo)
+{
+	switch (btn)
+	{
+		case RN42_HID_gamepad::Button::A:
+		case RN42_HID_gamepad::Button::B:
+		case RN42_HID_gamepad::Button::C:
+		case RN42_HID_gamepad::Button::X:
+		case RN42_HID_gamepad::Button::Y:
+		case RN42_HID_gamepad::Button::Z:
+		case RN42_HID_gamepad::Button::L1:
+		case RN42_HID_gamepad::Button::R1:
+		case RN42_HID_gamepad::Button::L2:
+		case RN42_HID_gamepad::Button::R2:
+		case RN42_HID_gamepad::Button::THUMBL:
+		case RN42_HID_gamepad::Button::THUMBR:
+			setButtonInReport(turboBtns, btn, isTurbo);
+			break;
+	}
+}
+
+bool RN42_HID_gamepad::isTurboButton(Button btn) const
+{
+	return isButtonInReport(turboBtns, btn);
 }
 
 //------------------------------------------------------------------
@@ -265,7 +327,7 @@ bool RN42_HID_gamepad::isChangeModeCombination() const
 //------------------------------------------------------------------
 
 // Хелпер
-void RN42_HID_gamepad::setButtonInReport(ButtonsCombination& bc, Button btn, bool pressed)
+void RN42_HID_gamepad::setButtonInReport(ButtonsCombination& bc, Button btn, bool state)
 {
 	uint8_t* byte = nullptr;
 	uint8_t mask = 0;
@@ -298,8 +360,44 @@ void RN42_HID_gamepad::setButtonInReport(ButtonsCombination& bc, Button btn, boo
 		default: return;
 	}
 
-	if (pressed)	*byte |= mask;
-	else			*byte &= ~mask;
+	if (state)	*byte |= mask;
+	else		*byte &= ~mask;
+}
+
+bool RN42_HID_gamepad::isButtonInReport(const ButtonsCombination& bc, Button btn) const
+{
+	uint8_t byte = 0;
+	uint8_t mask = 0;
+
+	switch (btn) {
+		// Первый байт кнопок
+		case Button::A:			byte = bc.btn1;		mask = Btn1::A;			break;
+		case Button::B:			byte = bc.btn1;		mask = Btn1::B;			break;
+		case Button::C:			byte = bc.btn1;		mask = Btn1::C;			break;
+		case Button::X:			byte = bc.btn1;		mask = Btn1::X;			break;
+		case Button::Y:			byte = bc.btn1;		mask = Btn1::Y;			break;
+		case Button::Z:			byte = bc.btn1;		mask = Btn1::Z;			break;
+		case Button::L1:		byte = bc.btn1;		mask = Btn1::L1;		break;
+		case Button::R1:		byte = bc.btn1;		mask = Btn1::R1;		break;
+		// Второй байт кнопок
+		case Button::L2:		byte = bc.btn2;		mask = Btn2::L2;		break;
+		case Button::R2:		byte = bc.btn2;		mask = Btn2::R2;		break;
+		case Button::SELECT:	byte = bc.btn2;		mask = Btn2::SELECT;	break;
+		case Button::START:		byte = bc.btn2;		mask = Btn2::START;		break;
+		case Button::MODE:		byte = bc.btn2;		mask = Btn2::MODE;		break;
+		case Button::THUMBL:	byte = bc.btn2;		mask = Btn2::THUMBL;	break;
+		case Button::THUMBR:	byte = bc.btn2;		mask = Btn2::THUMBR;	break;
+		case Button::HOME:		byte = bc.btn2;		mask = Btn2::HOME;		break;
+		// D-Pad
+		case Button::UP:		byte = bc.dpad;		mask = DPad::UP;		break;
+		case Button::RIGHT:		byte = bc.dpad;		mask = DPad::RIGHT;		break;
+		case Button::DOWN:		byte = bc.dpad;		mask = DPad::DOWN;		break;
+		case Button::LEFT:		byte = bc.dpad;		mask = DPad::LEFT;		break;
+		
+		default: return false;
+	}
+
+	return (byte & mask);
 }
 
 //------------------------------------------------------------------
