@@ -56,8 +56,11 @@
 //=====================================================================================================================================
 
 // Считывание нажатых в данный момент кнопок и установка в RN42_HID_gamepad
-// Возвращает true если нажата хоть одна кнопка
 void readAllButtons();
+
+// Считывание нажатых в данный момент кнопок кнопок на геймпадах с дублирующими Turbo-кнопками
+// и установка в RN42_HID_gamepad
+void readButtonsWithTurbo();
 
 
 // Колбэк при срабатывании таймера удержания одной из комбинаций
@@ -178,6 +181,7 @@ void loop()
   delay(REPORT_INTERVAL_MS);
 
   readAllButtons();               // Чтение нажатых кнопок сразу в hid_gamepad
+  //readButtonsWithTurbo();         // Чтение нажатых кнопок сразу в hid_gamepad
 
   gamepad_power_manager.tick();   // Предусловия (напряжение батареи, наличие активного сопряжения)
 
@@ -225,10 +229,29 @@ void loop()
 
 void readAllButtons()
 {
+  // Считываем все данные
+  for (uint8_t btn = 0; btn < BUTTONS_VARIANTS; btn++)
+  {
+    RN42_HID_gamepad::Button currBtn = static_cast<RN42_HID_gamepad::Button>(btn);
+
+    uint8_t pin = getButtonPin(currBtn);
+    if (pin != UINT8_MAX)
+    {
+      bool isCurrButtonPressed = digitalRead(pin) == LOW;
+      hid_gamepad.setButtonState(currBtn, isCurrButtonPressed);
+    }
+  }
+  
+  // Левый и правый стики читаются отдельно как аналоговые значения
+  // Обработка отсутствует т.к. у Sega MD2 / Saturn и NES / SNES нет аналоговых стиков
+}
+
+void readButtonsWithTurbo()
+{
   // ================================================== TURBO ==================================================
   // ТОЛЬКО для геймпадов с дублирующими турбо-кнопками
   // Включение/выключение турбо-функционала для отдельных кнопок
-  /*for (uint8_t btn = 0; btn < BUTTONS_VARIANTS; btn++)
+  for (uint8_t btn = 0; btn < BUTTONS_VARIANTS; btn++)
   {
     RN42_HID_gamepad::Button currBtn = static_cast<RN42_HID_gamepad::Button>(btn);
     uint8_t pin = getButtonPin(currBtn);
@@ -254,7 +277,7 @@ void readAllButtons()
           break;
       }
     }
-  }*/
+  }
   // ================================================== TURBO ==================================================
   
   // Считываем все данные
@@ -264,13 +287,13 @@ void readAllButtons()
 
     // ================================================== TURBO ==================================================
     // Полностью игнорируем нажатие X/Y/Z. isTurboButton == true для A/B/C уже означает нажатие X/Y/Z
-    /*switch (currBtn)
+    switch (currBtn)
     {
       case RN42_HID_gamepad::Button::X:
       case RN42_HID_gamepad::Button::Y:
       case RN42_HID_gamepad::Button::Z:
         continue;
-    }*/
+    }
     // ================================================== TURBO ==================================================
 
     uint8_t pin = getButtonPin(currBtn);
@@ -280,13 +303,13 @@ void readAllButtons()
       bool isCurrButtonPressed = digitalRead(pin) == LOW;
 
       // ================================================== TURBO ==================================================
-      /*switch (currBtn)
+      switch (currBtn)
       {
         case RN42_HID_gamepad::Button::A:
         case RN42_HID_gamepad::Button::B:
         case RN42_HID_gamepad::Button::C:
           isCurrButtonPressed |= hid_gamepad.isTurboButton(currBtn);
-      }*/
+      }
       // ================================================== TURBO ==================================================
 
       hid_gamepad.setButtonState(currBtn, isCurrButtonPressed);
